@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <title>Depth Proximity Beeper</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(20,20,24,.82);
+      --border: rgba(255,255,255,.14);
+      --muted: rgba(255,255,255,.68);
+      --good: #43e887;
+      --warn: #ffd54a;
+      --danger: #ff5353;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                   "SF Pro Text", system-ui, sans-serif;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      background: #000;
+    }
+
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    canvas {
+      pointer-events: none;
+    }
+
+    .top {
+      position: absolute;
+      z-index: 10;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      right: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .card {
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.32);
+    }
+
+    #status {
+      font-size: 16px;
+      font-weight: 750;
+      line-height: 1.2;
+    }
+
+    #detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .meter {
+      margin-top: 10px;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.13);
+    }
+
+    #meterFill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--good);
+      transition: width .16s linear, background .16s linear;
+    }
+
+    .bottom {
+      position: absolute;
+      z-index: 10;
+      left: 12px;
+      right: 12px;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      border-radius: 16px;
+      min-height: 54px;
+      padding: 12px 14px;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 750;
+      color: #fff;
+      background: rgba(255,255,255,.16);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    button:active {
+      transform: scale(.985);
+    }
+
+    #startBtn {
+      background: #fff;
+      color: #000;
+    }
+
+    #stopBtn {
+      background: rgba(255,83,83,.26);
+    }
+
+    #help {
+      display: none;
+      position: absolute;
+      z-index: 20;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0,0,0,.88);
+    }
+
+    #help.show {
+      display: flex;
+    }
+
+    #help .card {
+      width: min(430px, 100%);
+      padding: 20px;
+    }
+
+    #help h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+    }
+
+    #help p {
+      margin: 8px 0;
+      color: rgba(255,255,255,.82);
+      line-height: 1.45;
+      font-size: 15px;
+    }
+
+    #help button {
+      width: 100%;
+      margin-top: 12px;
+    }
+
+    .tiny {
+      text-align: center;
+      color: rgba(255,255,255,.58);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+  </style>
+</head>
+
+<body>
+<div id="stage">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+
+  <!-- Hidden canvas used to send small camera frames to the depth model. -->
+  <canvas id="capture" width="384" height="288" style="display:none;"></canvas>
+
+  <div class="top">
+    <div class="card">
+      <div id="status">Ready</div>
+      <div id="detail">
+        Detects scene depth: walls, furniture, people, doors, and other surfaces.
+      </div>
+      <div class="meter"><div id="meterFill"></div></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <button id="startBtn">Start Proximity Detector</button>
+
+    <div class="row">
+      <button id="cameraBtn">Use Front Camera</button>
+      <button id="soundBtn">Sound: On</button>
+    </div>
+
+    <div class="row">
+      <button id="resetBtn">Reset Distance Baseline</button>
+      <button id="zoneBtn">Scan Zone: Wide</button>
+    </div>
+
+    <button id="stopBtn" style="display:none;">Stop</button>
+
+    <div class="tiny">
+      Fixed beep tone: 950 Hz. Only the beep RATE changes. Depth is camera/AI-estimated, not LiDAR-measured.
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="card">
+      <h2>Couldn't start</h2>
+      <p id="helpText"></p>
+      <button id="closeHelp">Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import {
+  pipeline,
+  env
+} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm";
+
+(() => {
+  const video = document.getElementById("video");
+  const overlay = document.getElementById("overlay");
+  const octx = overlay.getContext("2d");
+
+  const capture = document.getElementById("capture");
+  const cctx = capture.getContext("2d", { willReadFrequently: false });
+
+  const statusEl = document.getElementById("status");
+  const detailEl = document.getElementById("detail");
+  const meterFill = document.getElementById("meterFill");
+
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const cameraBtn = document.getElementById("cameraBtn");
+  const soundBtn = document.getElementById("soundBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const zoneBtn = document.getElementById("zoneBtn");
+
+  const help = document.getElementById("help");
+  const helpText = document.getElementById("helpText");
+  const closeHelp = document.getElementById("closeHelp");
+
+  let depthEstimator = null;
+  let stream = null;
+  let running = false;
+  let inferenceBusy = false;
+  let soundEnabled = true;
+  let facingMode = "environment";
+  let scanWide = true;
+
+  let audioCtx = null;
+  let nextBeepAt = 0;
+
+  let currentProximity = 0;
+  let smoothedProximity = 0;
+
+  // The relative-depth model is not a physical distance sensor.
+  // We maintain a slow temporal reference so it can react more strongly
+  // when the scene in front of the camera starts looming closer.
+  let baselineMedian = null;
+  let baselineNear = null;
+  let baselineSamples = [];
+
+  // -------------------- TUNING --------------------
+
+  // AI inference is much heavier than person bounding-box detection.
+  // The beep scheduler runs independently, so beeping stays responsive.
+  const DEPTH_UPDATE_MS = 650;
+
+  // Same exact tone for every beep. DO NOT vary this with proximity.
+  const BEEP_FREQUENCY_HZ = 950;
+  const BEEP_DURATION_SEC = 0.050;
+
+  // Only time between beeps changes.
+  const FAR_INTERVAL_SEC = 1.65;
+  const CLOSE_INTERVAL_SEC = 0.060;
+
+  // How quickly the displayed/beep proximity reacts.
+  const SMOOTHING = 0.38;
+
+  // Ignore a thin edge around the depth map because edges can be noisy.
+  const EDGE_MARGIN = 0.05;
+
+  // ------------------------------------------------
+
+  env.allowLocalModels = false;
+
+  function setStatus(title, detail) {
+    statusEl.textContent = title;
+    detailEl.textContent = detail;
+  }
+
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function percentile(sorted, p) {
+    if (!sorted.length) return 0;
+    const idx = clamp(Math.floor((sorted.length - 1) * p), 0, sorted.length - 1);
+    return sorted[idx];
+  }
+
+  function showHelp(message) {
+    helpText.textContent = message;
+    help.classList.add("show");
+  }
+
+  closeHelp.addEventListener("click", () => help.classList.remove("show"));
+
+  async function prepareAudio() {
+    if (!audioCtx) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioContext();
+    }
+
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+  }
+
+  function beep() {
+    if (!soundEnabled || !audioCtx) return;
+
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    // FIXED PITCH.
+    // Proximity never changes osc.frequency.
+    osc.frequency.value = BEEP_FREQUENCY_HZ;
+    osc.type = "sine";
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.24, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + BEEP_DURATION_SEC);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start(now);
+    osc.stop(now + BEEP_DURATION_SEC + 0.005);
+  }
+
+  function beepIntervalForProximity(p) {
+    // A curved response makes the final part of the approach get
+    // dramatically faster, similar to a parking sensor.
+    const curved = Math.pow(clamp(p, 0, 1), 1.65);
+    return lerp(FAR_INTERVAL_SEC, CLOSE_INTERVAL_SEC, curved);
+  }
+
+  function updateMeter(p) {
+    meterFill.style.width = `${Math.round(p * 100)}%`;
+
+    if (p > 0.72) {
+      meterFill.style.background = "#ff5353";
+    } else if (p > 0.38) {
+      meterFill.style.background = "#ffd54a";
+    } else {
+      meterFill.style.background = "#43e887";
+    }
+  }
+
+  function resizeOverlay() {
+    const rect = video.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    overlay.width = Math.round(rect.width * dpr);
+    overlay.height = Math.round(rect.height * dpr);
+    overlay.style.width = rect.width + "px";
+    overlay.style.height = rect.height + "px";
+
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawScanZone(p) {
+    resizeOverlay();
+
+    const w = video.clientWidth;
+    const h = video.clientHeight;
+
+    octx.clearRect(0, 0, w, h);
+
+    const zoneW = scanWide ? w * 0.76 : w * 0.46;
+    const zoneH = h * 0.64;
+    const x = (w - zoneW) / 2;
+    const y = h * 0.18;
+
+    let color = "rgba(67,232,135,.95)";
+    if (p > 0.72) color = "rgba(255,83,83,.98)";
+    else if (p > 0.38) color = "rgba(255,213,74,.98)";
+
+    octx.strokeStyle = color;
+    octx.lineWidth = p > 0.72 ? 5 : 3;
+    octx.setLineDash([12, 10]);
+    octx.strokeRect(x, y, zoneW, zoneH);
+    octx.setLineDash([]);
+
+    if (p > 0.72) {
+      octx.fillStyle = "rgba(255,83,83,.10)";
+      octx.fillRect(x, y, zoneW, zoneH);
+    }
+  }
+
+  function resetBaseline() {
+    baselineMedian = null;
+    baselineNear = null;
+    baselineSamples = [];
+
+    setStatus(
+      "Recalibrating distance…",
+      "Hold the phone normally for a moment while a new baseline is learned."
+    );
+  }
+
+  async function loadDepthModel() {
+    if (depthEstimator) return;
+
+    setStatus(
+      "Loading depth AI…",
+      "First launch can take a while because the depth model must download to Safari."
+    );
+
+    // Small quantized model is chosen to make browser/iPhone inference practical.
+    depthEstimator = await pipeline(
+      "depth-estimation",
+      "onnx-community/depth-anything-v2-small",
+      { dtype: "q8" }
+    );
+  }
+
+  function makeDepthInput() {
+    const targetW = capture.width;
+    const targetH = capture.height;
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+
+    if (!vw || !vh) return null;
+
+    // Center-crop camera image into the model canvas.
+    const targetRatio = targetW / targetH;
+    const videoRatio = vw / vh;
+
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+
+    if (videoRatio > targetRatio) {
+      sw = vh * targetRatio;
+      sx = (vw - sw) / 2;
+    } else {
+      sh = vw / targetRatio;
+      sy = (vh - sh) / 2;
+    }
+
+    cctx.save();
+
+    if (facingMode === "user") {
+      cctx.translate(targetW, 0);
+      cctx.scale(-1, 1);
+    }
+
+    cctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
+    cctx.restore();
+
+    // Transformers.js accepts image URLs; a data URL keeps this a single HTML file.
+    return capture.toDataURL("image/jpeg", 0.72);
+  }
+
+  function calculateProximity(predictedDepth) {
+    const data = predictedDepth?.data;
+    const dims = predictedDepth?.dims;
+
+    if (!data || !dims || dims.length < 2 || !data.length) {
+      throw new Error("Depth model returned an unexpected depth map.");
+    }
+
+    const dh = dims[dims.length - 2];
+    const dw = dims[dims.length - 1];
+
+    if (!dw || !dh || dw * dh > data.length * 2) {
+      throw new Error("Depth-map dimensions are invalid.");
+    }
+
+    // Depth Anything V2 relative model behaves like inverse depth:
+    // larger raw values generally mean CLOSER.
+    //
+    // Scan primarily the center of the image because that corresponds
+    // to the direction the phone is pointing / the user's path.
+
+    const zoneWidthFraction = scanWide ? 0.76 : 0.46;
+
+    const x0 = Math.floor(dw * (0.5 - zoneWidthFraction / 2));
+    const x1 = Math.ceil(dw * (0.5 + zoneWidthFraction / 2));
+    const y0 = Math.floor(dh * 0.18);
+    const y1 = Math.ceil(dh * 0.82);
+
+    const ex0 = Math.floor(dw * EDGE_MARGIN);
+    const ex1 = Math.ceil(dw * (1 - EDGE_MARGIN));
+    const ey0 = Math.floor(dh * EDGE_MARGIN);
+    const ey1 = Math.ceil(dh * (1 - EDGE_MARGIN));
+
+    const roi = [];
+    const global = [];
+
+    // Subsample to keep percentile calculations fast.
+    const step = Math.max(1, Math.floor(Math.min(dw, dh) / 80));
+
+    for (let y = ey0; y < ey1; y += step) {
+      const row = y * dw;
+
+      for (let x = ex0; x < ex1; x += step) {
+        const v = Number(data[row + x]);
+        if (!Number.isFinite(v)) continue;
+
+        global.push(v);
+
+        if (x >= x0 && x < x1 && y >= y0 && y < y1) {
+          roi.push(v);
+        }
+      }
+    }
+
+    if (global.length < 30 || roi.length < 20) {
+      throw new Error("Not enough valid pixels in depth map.");
+    }
+
+    global.sort((a, b) => a - b);
+    roi.sort((a, b) => a - b);
+
+    const globalP10 = percentile(global, 0.10);
+    const globalP50 = percentile(global, 0.50);
+    const globalP90 = percentile(global, 0.90);
+
+    const roiP50 = percentile(roi, 0.50);
+    const roiP88 = percentile(roi, 0.88);
+
+    const spread = Math.max(1e-6, globalP90 - globalP10);
+
+    // 1) Spatial depth cue:
+    // How close does the central obstacle region look relative to the rest
+    // of the current scene?
+    const spatialNear = clamp(
+      ((roiP88 - globalP50) / spread) * 1.7 + 0.18,
+      0,
+      1
+    );
+
+    // 2) Large-surface cue:
+    // If much of the center is near-depth, raise the score. This helps
+    // with broad walls/doors instead of only small foreground objects.
+    const broadSurface = clamp(
+      ((roiP50 - globalP10) / spread - 0.28) * 1.55,
+      0,
+      1
+    );
+
+    // Gather a few starting samples before using temporal scale.
+    if (baselineMedian === null || baselineNear === null) {
+      baselineSamples.push({
+        median: Math.max(1e-6, globalP50),
+        near: Math.max(1e-6, roiP88)
+      });
+
+      if (baselineSamples.length >= 3) {
+        const medians = baselineSamples.map(x => x.median).sort((a,b) => a-b);
+        const nears = baselineSamples.map(x => x.near).sort((a,b) => a-b);
+
+        baselineMedian = medians[Math.floor(medians.length / 2)];
+        baselineNear = nears[Math.floor(nears.length / 2)];
+      }
+
+      return Math.max(spatialNear * 0.72, broadSurface * 0.62);
+    }
+
+    // 3) Temporal "looming" cue:
+    // If the inverse-depth values rise versus the starting view, the
+    // camera is likely moving toward surfaces.
+    const medianRatio = globalP50 / Math.max(1e-6, baselineMedian);
+    const nearRatio = roiP88 / Math.max(1e-6, baselineNear);
+    const ratio = Math.max(medianRatio, nearRatio);
+
+    const looming = clamp((ratio - 1.00) / 0.70, 0, 1);
+
+    // Let the reference slowly adapt only when things do not look close.
+    // This prevents normal lighting/scene drift from permanently changing it.
+    if (smoothedProximity < 0.28) {
+      baselineMedian = baselineMedian * 0.992 + globalP50 * 0.008;
+      baselineNear = baselineNear * 0.992 + roiP88 * 0.008;
+    }
+
+    // Combine the three cues. Using max makes it react when ANY strong
+    // obstacle/depth cue says the path is getting close.
+    return clamp(
+      Math.max(
+        spatialNear * 0.88,
+        broadSurface * 0.82,
+        looming
+      ),
+      0,
+      1
+    );
+  }
+
+  async function updateDepth() {
+    if (!running || inferenceBusy || !depthEstimator || video.readyState < 2) {
+      return;
+    }
+
+    inferenceBusy = true;
+
+    try {
+      const input = makeDepthInput();
+      if (!input) return;
+
+      const result = await depthEstimator(input);
+      const raw = Array.isArray(result) ? result[0] : result;
+
+      const p = calculateProximity(raw.predicted_depth);
+
+      currentProximity = p;
+      smoothedProximity =
+        smoothedProximity * (1 - SMOOTHING) +
+        currentProximity * SMOOTHING;
+
+      const interval = beepIntervalForProximity(smoothedProximity);
+
+      updateMeter(smoothedProximity);
+      drawScanZone(smoothedProximity);
+
+      let level = "CLEAR";
+      if (smoothedProximity > 0.78) level = "VERY CLOSE";
+      else if (smoothedProximity > 0.53) level = "CLOSE";
+      else if (smoothedProximity > 0.28) level = "APPROACHING";
+
+      setStatus(
+        level,
+        `Estimated proximity ${Math.round(smoothedProximity * 100)}% · same 950 Hz tone · beep every ${interval.toFixed(2)}s`
+      );
+
+    } catch (err) {
+      console.error("Depth estimation error:", err);
+      setStatus(
+        "Depth scan issue",
+        err?.message || "The depth model could not analyze this frame."
+      );
+    } finally {
+      inferenceBusy = false;
+    }
+  }
+
+  function beepLoop(nowMs) {
+    if (!running) return;
+
+    const interval = beepIntervalForProximity(smoothedProximity);
+
+    if (nowMs >= nextBeepAt) {
+      beep();
+
+      // At maximum proximity this becomes extremely frequent,
+      // but the pitch remains EXACTLY the same.
+      nextBeepAt = nowMs + interval * 1000;
+    }
+
+    requestAnimationFrame(beepLoop);
+  }
+
+  async function depthLoop() {
+    if (!running) return;
+
+    await updateDepth();
+
+    if (running) {
+      setTimeout(depthLoop, DEPTH_UPDATE_MS);
+    }
+  }
+
+  async function startCamera() {
+    try {
+      await prepareAudio();
+
+      if (!window.isSecureContext) {
+        showHelp(
+          "iPhone camera access requires this page to be opened from a secure HTTPS website. " +
+          "Opening the raw HTML file directly from Files may not allow camera access."
+        );
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showHelp("Open this page in Safari so it can use the iPhone camera.");
+        return;
+      }
+
+      await loadDepthModel();
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      setStatus("Starting camera…", "Allow camera access if Safari asks.");
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+
+      video.srcObject = stream;
+      await video.play();
+
+      video.style.transform =
+        facingMode === "user" ? "scaleX(-1)" : "none";
+
+      running = true;
+      inferenceBusy = false;
+      currentProximity = 0;
+      smoothedProximity = 0;
+      nextBeepAt = performance.now();
+
+      resetBaseline();
+
+      startBtn.style.display = "none";
+      stopBtn.style.display = "block";
+
+      cameraBtn.textContent =
+        facingMode === "environment"
+          ? "Use Front Camera"
+          : "Use Back Camera";
+
+      setStatus(
+        "Learning the scene…",
+        "Hold the phone normally for the first few depth scans."
+      );
+
+      requestAnimationFrame(beepLoop);
+      depthLoop();
+
+    } catch (err) {
+      console.error(err);
+
+      let msg = "Safari could not start the detector.";
+
+      if (err?.name === "NotAllowedError") {
+        msg += " Camera permission was denied. Allow Safari camera access in iPhone Settings and reload.";
+      } else if (err?.message) {
+        msg += " " + err.message;
+      }
+
+      showHelp(msg);
+      setStatus("Stopped", "Tap Start Proximity Detector to try again.");
+    }
+  }
+
+  function stopCamera() {
+    running = false;
+    inferenceBusy = false;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+
+    currentProximity = 0;
+    smoothedProximity = 0;
+    updateMeter(0);
+
+    startBtn.style.display = "block";
+    stopBtn.style.display = "none";
+
+    setStatus("Stopped", "Tap Start Proximity Detector when you're ready.");
+  }
+
+  async function switchCamera() {
+    facingMode =
+      facingMode === "environment" ? "user" : "environment";
+
+    cameraBtn.textContent =
+      facingMode === "environment"
+        ? "Use Front Camera"
+        : "Use Back Camera";
+
+    if (!running) return;
+
+    running = false;
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    await startCamera();
+  }
+
+  startBtn.addEventListener("click", startCamera);
+  stopBtn.addEventListener("click", stopCamera);
+  cameraBtn.addEventListener("click", switchCamera);
+  resetBtn.addEventListener("click", resetBaseline);
+
+  zoneBtn.addEventListener("click", () => {
+    scanWide = !scanWide;
+    zoneBtn.textContent =
+      scanWide ? "Scan Zone: Wide" : "Scan Zone: Center";
+
+    drawScanZone(smoothedProximity);
+  });
+
+  soundBtn.addEventListener("click", async () => {
+    soundEnabled = !soundEnabled;
+    soundBtn.textContent =
+      soundEnabled ? "Sound: On" : "Sound: Off";
+
+    if (soundEnabled) {
+      await prepareAudio();
+
+      // Demonstrates the exact fixed tone.
+      beep();
+    }
+  });
+
+  window.addEventListener("resize", () => drawScanZone(smoothedProximity));
+
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => drawScanZone(smoothedProximity), 250);
+  });
+})();
+</script>
+</body>
+</html>
