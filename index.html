@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0b0d" />
+  <title>Echolocation Click Generator</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0b0d;
+      --card: #17171c;
+      --border: #2a2a32;
+      --text: #f7f7f8;
+      --muted: #a4a4ad;
+      --accent: #ffffff;
+      --danger: #ff5a5f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                   "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding:
+        max(20px, env(safe-area-inset-top))
+        16px
+        max(20px, env(safe-area-inset-bottom));
+    }
+
+    .app {
+      width: min(680px, 100%);
+      display: grid;
+      gap: 16px;
+    }
+
+    .header {
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 6vw, 44px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 10px auto 0;
+      max-width: 540px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 15px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 18px;
+    }
+
+    .control {
+      display: grid;
+      gap: 12px;
+    }
+
+    .control + .control {
+      margin-top: 24px;
+    }
+
+    .label-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .label-copy {
+      min-width: 0;
+    }
+
+    .label {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .hint {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .number-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+    }
+
+    input[type="number"] {
+      width: 110px;
+      border: 1px solid var(--border);
+      background: #0f0f13;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 11px;
+      font: inherit;
+      font-size: 17px;
+      font-weight: 650;
+      text-align: right;
+      outline: none;
+    }
+
+    input[type="number"]:focus {
+      border-color: #64646f;
+    }
+
+    .unit {
+      min-width: 34px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      margin: 5px 0 0;
+      accent-color: var(--accent);
+      height: 34px;
+    }
+
+    .range-labels {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: -5px;
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      border-radius: 18px;
+      min-height: 60px;
+      padding: 14px 18px;
+      font: inherit;
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    #startStop {
+      background: var(--accent);
+      color: #000;
+    }
+
+    #startStop.running {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    #testClick {
+      background: #222229;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      color: var(--muted);
+      min-height: 22px;
+      font-size: 14px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #575762;
+    }
+
+    .dot.on {
+      background: #55e38e;
+      box-shadow: 0 0 16px rgba(85,227,142,.45);
+    }
+
+    .warning {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: center;
+      padding: 0 8px;
+    }
+
+    @media (min-width: 560px) {
+      .buttons {
+        grid-template-columns: 2fr 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="app">
+    <div class="header">
+      <h1>Echolocation Click Generator</h1>
+      <p class="subtitle">
+        Choose how many clicks happen each second and the pitch of each click.
+        Drag the sliders or type exact values.
+      </p>
+    </div>
+
+    <section class="card">
+      <div class="control">
+        <div class="label-row">
+          <div class="label-copy">
+            <div class="label">Click frequency</div>
+            <div class="hint">How fast the clicks repeat</div>
+          </div>
+
+          <div class="number-wrap">
+            <input
+              id="rateNumber"
+              type="number"
+              min="0.5"
+              max="120"
+              step="0.1"
+              value="8"
+              inputmode="decimal"
+            />
+            <span class="unit">Hz</span>
+          </div>
+        </div>
+
+        <input
+          id="rateSlider"
+          type="range"
+          min="0.5"
+          max="120"
+          step="0.1"
+          value="8"
+        />
+
+        <div class="range-labels">
+          <span>0.5 clicks/sec</span>
+          <span>120 clicks/sec</span>
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="label-row">
+          <div class="label-copy">
+            <div class="label">Click pitch</div>
+            <div class="hint">Tone inside each very short click</div>
+          </div>
+
+          <div class="number-wrap">
+            <input
+              id="pitchNumber"
+              type="number"
+              min="100"
+              max="20000"
+              step="10"
+              value="4000"
+              inputmode="numeric"
+            />
+            <span class="unit">Hz</span>
+          </div>
+        </div>
+
+        <input
+          id="pitchSlider"
+          type="range"
+          min="100"
+          max="20000"
+          step="10"
+          value="4000"
+        />
+
+        <div class="range-labels">
+          <span>100 Hz</span>
+          <span>20,000 Hz</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="buttons">
+      <button id="startStop">Start Clicking</button>
+      <button id="testClick">Test One Click</button>
+    </div>
+
+    <div class="status">
+      <span id="statusDot" class="dot"></span>
+      <span id="statusText">Stopped</span>
+    </div>
+
+    <div class="warning">
+      Very high pitches may be quiet or inaudible depending on your age, hearing,
+      phone speaker, headphones, and volume. Start at a comfortable volume.
+    </div>
+  </main>
+
+  <script>
+    const rateSlider = document.getElementById("rateSlider");
+    const rateNumber = document.getElementById("rateNumber");
+
+    const pitchSlider = document.getElementById("pitchSlider");
+    const pitchNumber = document.getElementById("pitchNumber");
+
+    const startStop = document.getElementById("startStop");
+    const testClick = document.getElementById("testClick");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+
+    let audioContext = null;
+    let isRunning = false;
+
+    // Audio scheduler state.
+    let schedulerTimer = null;
+    let nextClickTime = 0;
+
+    const LOOKAHEAD_MS = 25;
+    const SCHEDULE_AHEAD_SEC = 0.10;
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function syncRateFromSlider() {
+      rateNumber.value = rateSlider.value;
+    }
+
+    function syncRateFromNumber() {
+      let value = Number(rateNumber.value);
+      if (!Number.isFinite(value)) return;
+
+      value = clamp(value, 0.5, 120);
+      rateNumber.value = value;
+      rateSlider.value = value;
+    }
+
+    function syncPitchFromSlider() {
+      pitchNumber.value = pitchSlider.value;
+    }
+
+    function syncPitchFromNumber() {
+      let value = Number(pitchNumber.value);
+      if (!Number.isFinite(value)) return;
+
+      value = clamp(value, 100, 20000);
+      pitchNumber.value = Math.round(value);
+      pitchSlider.value = Math.round(value);
+    }
+
+    rateSlider.addEventListener("input", syncRateFromSlider);
+    rateNumber.addEventListener("input", syncRateFromNumber);
+    rateNumber.addEventListener("change", syncRateFromNumber);
+
+    pitchSlider.addEventListener("input", syncPitchFromSlider);
+    pitchNumber.addEventListener("input", syncPitchFromNumber);
+    pitchNumber.addEventListener("change", syncPitchFromNumber);
+
+    async function ensureAudio() {
+      if (!audioContext) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
+      }
+
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+    }
+
+    function scheduleClick(time) {
+      if (!audioContext) return;
+
+      const pitch = clamp(Number(pitchNumber.value) || 4000, 100, 20000);
+
+      // A very short sine burst with a fast envelope.
+      // This makes it sound like a sharp "click" rather than a sustained beep.
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(pitch, time);
+
+      const duration = 0.0045; // 4.5 ms click
+
+      gain.gain.setValueAtTime(0.0001, time);
+      gain.gain.exponentialRampToValueAtTime(0.38, time + 0.0005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+
+      osc.start(time);
+      osc.stop(time + duration + 0.001);
+    }
+
+    function scheduler() {
+      if (!isRunning || !audioContext) return;
+
+      const rate = clamp(Number(rateNumber.value) || 8, 0.5, 120);
+      const interval = 1 / rate;
+
+      while (nextClickTime < audioContext.currentTime + SCHEDULE_AHEAD_SEC) {
+        scheduleClick(nextClickTime);
+        nextClickTime += interval;
+      }
+    }
+
+    async function startClicking() {
+      await ensureAudio();
+
+      isRunning = true;
+      nextClickTime = audioContext.currentTime + 0.03;
+
+      schedulerTimer = setInterval(scheduler, LOOKAHEAD_MS);
+      scheduler();
+
+      startStop.textContent = "Stop Clicking";
+      startStop.classList.add("running");
+      statusDot.classList.add("on");
+      statusText.textContent = "Clicking";
+    }
+
+    function stopClicking() {
+      isRunning = false;
+
+      if (schedulerTimer) {
+        clearInterval(schedulerTimer);
+        schedulerTimer = null;
+      }
+
+      startStop.textContent = "Start Clicking";
+      startStop.classList.remove("running");
+      statusDot.classList.remove("on");
+      statusText.textContent = "Stopped";
+    }
+
+    startStop.addEventListener("click", async () => {
+      if (isRunning) {
+        stopClicking();
+      } else {
+        await startClicking();
+      }
+    });
+
+    testClick.addEventListener("click", async () => {
+      await ensureAudio();
+      scheduleClick(audioContext.currentTime + 0.01);
+    });
+
+    // Stop scheduled clicking if the page becomes hidden.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && isRunning) {
+        stopClicking();
+      }
+    });
+  </script>
+</body>
+</html>
